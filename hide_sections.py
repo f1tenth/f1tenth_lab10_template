@@ -4,11 +4,11 @@ import json
 import re
 from pathlib import Path
 
-NB = Path(__file__).resolve().parent.parent / "rtdetrv2_f1tenth_student_ver.ipynb"
+NB = Path(__file__).resolve().parent / "rtdetrv2_f1tenth_student_ver.ipynb"
 
 # section number -> hide its code? (cells containing STUDENT CODE are never hidden)
 HIDE = {
-    "0": False,     # Install
+    "0": True,     # Install
     "1": False,     # Configuration
     "2.1": False,   # Helpers
     "2.2": False,   # Backbone: PResNet
@@ -21,10 +21,10 @@ HIDE = {
     "2.9": True,    # Post-processing and preprocessing
     "2.10": False,  # Following one image through the model
     "3": False,     # Run the pretrained (COCO) model
-    "4": False,     # Dataset
+    "4": True,     # Dataset
     "5": False,     # Model for the new class(es)
     "6": True,      # Loss
-    "7": False,     # Training and evaluation
+    "7": True,     # Training and evaluation
     "8": False,     # Inference
 }
 
