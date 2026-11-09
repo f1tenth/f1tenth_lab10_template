@@ -5,8 +5,8 @@ Welcome to the Vision Lab. There are four parts in this lab. Part 1-3 are quite 
 ## I. Learning Goals
 
 - Use of v4l2 to access and control camera device.
-- Camera calibration with OpenCV
-- Distance measurement with object on the ground
+- Calibration of camera intrinsics and extrinsics with other sensors (e.g. Lidar, IMU)
+- Triangulating the target object in 3D using depth
 - Training and Deployment of an object detection with TensorRT
 
 ## II. Use cameras on Linux system
@@ -19,43 +19,119 @@ During racing, we want to receive camera frames as fast as possible. Realsense c
 
 Save this part of the code as 'camera.py' or 'camera.cpp'.
 
-## III. Camera Calibration & Distance Measurement
+## III. Camera Calibration
+For the scope of this course, we use a pinhole camera. The intrinsics of the camera refer to the center and focal length of lens and map the points in front of the camera to the image plane.
+A point $P_C = (X, Y, Z)$ in the camera frame, with $Z > 0$ in front of the camera, projects to pixel $(u, v)$:
 
-In this part, you will develop a distance measurement algorithm with the assumption that the camera frame axes are overlapping the car frame axes with a height H on the Z axis of car frame.
+$$
+\begin{bmatrix} u \\ v \\ 1 \end{bmatrix} = \frac{1}{Z} K \begin{bmatrix} X \\ Y \\ Z \end{bmatrix},
+\qquad
+K = \begin{bmatrix} f_x & 0 & c_x \\ 0 & f_y & c_y \\ 0 & 0 & 1 \end{bmatrix}
+\quad\Longleftrightarrow\quad
+u = f_x \frac{X}{Z} + c_x, \quad v = f_y \frac{Y}{Z} + c_y
+$$
 
-First, we need to get the camera intrinsic matrix from a camera calibration. The images needed for such a calibration is provides in the 'calibration' folder. Please use `findChessboardCorners` and `calibrateCamera` to get the intrinsic matrix. The calibrations checkerboard is 6x8 vertices and side witdth is 25mm.
+$f_x, f_y$ are the focal lengths in pixels and $(c_x, c_y)$ is the principal point (center). Take them from the RealSense `camera_info` topic. **$K$ belongs to one resolution.** If the image is resized by $s$, scale $f_x, f_y, c_x, c_y$ by $s$ as well. The RealSense colour stream reports zero distortion, so you can usually skip it.
 
-Second, the height of the camera can be difficult to measure precisely. We need corresponding point in the car frame to calculate this height. In the `resource` folder, there is an image with measured x_car distance called `cone_x40cm.png`. The x_car of the cone is 40cm. Please calculate the mounting height with this info.
+In the inverse equation, a pixel only gives a **ray**, not a point:
 
-Please write a function that takes in image pixel coordinates and outputs the distance in x_car and y_car coordinate. There is another image with unknown distance called `cone_unknown.png` in the `resource` folder. Please the distances from the camera to this cone. 
+$$
+d_C = K^{-1} \begin{bmatrix} u \\ v \\ 1 \end{bmatrix} = \begin{bmatrix} (u - c_x)/f_x \\ (v - c_y)/f_y \\ 1 \end{bmatrix},
+\qquad P_C = Z d_C \quad \text{for an unknown depth } Z
+$$
 
-Note 1: All distances are with respect to the lower right corner of the nearest red cone.
-![cone_point](imgs/cone_point.png)
+So if you know the depth $Z$ of a pixel, from the RealSense depth image or from the LiDAR, the 3D point is
 
-Note 2: x, y coordinates are different from row and column in an image.
+$$
+X = \frac{(u - c_x) Z}{f_x}, \qquad Y = \frac{(v - c_y) Z}{f_y}, \qquad Z = Z.
+$$
+Read more [here](https://hedivision.github.io/Pinhole.html)
 
-Note 3: All images are in 960x540 resolution.
+### Optional
+Camera calibration can change slightly over a period of time and might not match the manufacturer's intrinsic calibration. One can recalibrate the intrinsics of the camera using OpenCV checkerboard [tutorial](https://docs.opencv.org/4.13.0/dc/dbb/tutorial_py_calibration.html). For multi camera system or Camera-IMU extrinsic calibration one can use [Kalibr](https://github.com/ethz-asl/kalibr). 
 
-<!-- ![](https://latex.codecogs.com/svg.latex?b) -->
+## IV. Distance Measurement
 
-Save this part of the code as 'distance.py' or 'distance.cpp'.
+In this part you will understand camera intrinsic and extrinsic calibration. Intel RealSense has a stereo camera setup, and IR projector based depth estimation. RealSense D435 has a depth range of 0.6m - 6m. Read more in Intel documents. \
 
-## IV. Lane Detection
+Given, pixel (x, y), camera intrinsics, and corresponding depth one can project the point in 3D with respect to the camera position. To get accurate long range depth, use LiDAR depth values. LiDAR is fixed with respect to the camera.
 
-In this part, you will develop a lane detection algorithm with classical computer vision. In the 'resource' folder, there is one image with yellow lane marks. Your task is to detect the lane maskers as good as possible, using HSV color space, `findContours` or any other functions. The example with lawn detection in the lecture is a path to follow. 
+### A. 2D to 3D projection  
 
-Your final result should look like this:
-![lane_sample](imgs/lane_sample.png)
+Every 3D point on a ray through the lens center lands on the same pixel. The depth value can be obtained from 2D lidar scan but it is on a different coordinate frame than camera coordinate frame. Thus, convert the depth scan to camera coordinate frame and use that to get the position of object with respect to the camera.
 
-Please write a function that take in an image and draw green edges around or green overlaps on the marks you detect.
 
-Save this part of the code as 'lane.py' or 'lane.cpp'.
+#### 1. Coordinate frames
+
+| Frame | Axes | Notes |
+| --- | --- | --- |
+| LiDAR $L$ | $x$ forward, $y$ left, $z$ up | the scan lies in the plane $z_L = 0$ |
+| Camera optical $C$ | $x$ right, $y$ down, $z$ forward | the OpenCV convention, `*_optical_frame` in ROS |
+
+Check the axis conventions of your own sensors before writing any code. A sign error here moves every point to the wrong side of the car.
+
+#### 3. Extrinsics: LiDAR frame → camera frame
+
+The LiDAR is rigidly mounted to the camera, so a single rigid transform maps between them:
+
+$$
+P_C = R_{CL} P_L + t_{CL}
+$$
+
+The first is the fixed **axis swap** from the LiDAR's "forward–left–up" to the camera's "right–down–forward" ($X_C = -y_L$, $Y_C = -z_L$, $Z_C = x_L$). Ensure both are rigidly mounted and the axes are perpendicular to avoid any smaller rotational discrepancies. 
+
+$$
+R_{CL} = \begin{bmatrix} 0 & -1 & 0 \\ 0 & 0 & -1 \\ 1 & 0 & 0 \end{bmatrix},
+\qquad t_{CL} = -R_{CL} c_L
+$$
+
+Here $c_L$ is the position of the camera lens center measured in the LiDAR frame. Example: a camera 7.6 cm in front of the LiDAR and 6.35 cm below it has $c_L = (0.076, 0, -0.0635)$ m, which gives $t_{CL} = (0, -0.0635, -0.076)$. Measure $c_L$ to the **lens** of the stream you use: on a D435 the color lens is not at the center of the camera case.
+
+#### 4. Projecting the LiDAR scan into the image
+
+Beam $i$ of a `sensor_msgs/LaserScan` with range $r_i$ and angle $\theta_i = \theta_{min} + i \Delta\theta$ is the point
+
+$$
+P_{L,i} = (r_i \cos\theta_i, r_i \sin\theta_i, 0).
+$$
+
+Transform it with the extrinsics, keep it only if $Z_C > 0$, and project it with $K$. Plot these pixels on the image: **this is your calibration check**. The projected scan must lie on the objects at LiDAR height, and its range jumps must line up with object edges. A horizontal shift means a lateral error in the extrinsics; a vertical shift means a height error.
+
+<!-- Because the scan is a plane, it does not appear as a straight line. For a camera with no tilt and the LiDAR a height $h$ above the lens:
+
+$$
+v = c_y - f_y \frac{h}{Z_C}
+$$
+
+Near objects therefore appear higher in the image. As $Z_C \to \infty$ the scan approaches the horizon row $v = c_y$. 
+
+#### 5. Pixel / bounding box → 3D using the LiDAR
+
+The LiDAR only measures along that one curve in the image, so a pixel $(u, v)$ takes its depth from the LiDAR returns **in its image column**:
+
+1. **Gate.** Keep the projected scan points with $|u_i - u| < w$. For a bounding box, take the box's columns, trimmed by about 15% on each side so the background at the edges is excluded.
+2. **Cluster and pick the nearest.** Split those returns where the range jumps (e.g. more than 3σ beyond what the angular step allows) and keep the **closest** cluster: the object occludes everything behind it. Interpolate it at column $u$ to get the LiDAR hit $h_L = (h_x, h_y, 0)$.
+3. **Intersect the pixel's ray with the object's surface.** Assume the surface is vertical at $h_L$, which holds for cars, walls and cones. Write the camera centre in the LiDAR frame, $a = -R_{CL}^{\top} t_{CL}$, and the pixel's ray direction in the LiDAR frame, $d = R_{CL}^{\top} K^{-1} [u, v, 1]^{\top}$. The vertical plane through $h_L$, facing the camera, has normal $n = (h_x - a_x, h_y - a_y, 0) / \lVert\cdot\rVert$, so
+$$
+\lambda = \frac{n^{\top} (h_L - a)}{n^{\top} d}, \qquad P_L = a + \lambda d .
+$$
+4. **Transform** $P_L$ to the frame you need, e.g. `base_link` using the LiDAR's mounting pose.
+
+For a level camera, an image column is a vertical plane through the lens, so step 3 is exact for any vertical surface. It also gives the height of pixels above or below the scan line. The simpler shortcut is to use the hit's depth $Z_C = (R_{CL} h_L + t_{CL})_z$ in the formula of Section 2. That is fine near the centre of the image, but it ignores the slant of the surface.
+
+**Resolution.** If the detector runs on a resized image ($W_{det} \times H_{det}$), first scale the box back to the camera resolution, $u = u_{det} W / W_{det}$ and $v = v_{det} H / H_{det}$, before using $K$.
+
+**Limitations to keep in mind.**
+
+- An object that does not cross the LiDAR plane (too low, or entirely above it) gets the depth of whatever is behind it. Check that the LiDAR hit projects **inside** the box vertically; otherwise reject the box.
+- Small boxes next to a nearer object can pick up that object's returns.
+- The RealSense depth image (reliable to about 3–6 m) is a useful cross-check at short range. See the optional part of Section VI. -->
 
 ## V. Object Detection Network Training & Deployment
 
-In this part, you will first train an object detection nerual network and deploy it onto the F110 car. 
+In this part, you will first train an object detection nerual network and deploy it onto the F110 car. The model you will use is RT-DETRv2 which is the real-time detection model with transformers developed by Facebook. The particular version you will implement has 80 classes. First infer it directly on the dataset image and observe the output classes. Next you can either add `f1tenth_car` as an additional class or only keep this class as the output. By default it keeps all classes, thus remove other object detections which do not belong to your class of interest. The purpose of this assignment is to understand using open source model architecture from source code and finetune or modify the architecture as required.  
 
-### Nerual Network Training
+### Neural Network Training
 
 #### Upload to Google Colab
 
@@ -65,9 +141,10 @@ You can create an ese_615 folder in the 'My Drive' in your Google Drive. Upload 
 
 #### TODOs
 
-There are only a few positions where marked 'TODO'. First is the network layer channels. Play around with different channel configurations. The first input channel should be 3, because we are feeding it with RGB image. The final output layers should be 5, because we have x, y, w, h and confidence. We don't have class, because we are only detecting F110 cars. Make sure the output channel of the upper layer needs to match the batchnorm size and the input channel of the lower layer. Usually the channels are set as multiplies of 2.
+There are only a few positions where marked 'TODO' or 'STUDENT CODE HERE'. The model arhcitecture is given in the notebook, it has a ResNet backbone, transformer encoder and decoder. You have to fill out parts of the encoder definition. Decoder has a more complicated deformable attention model and therefore it's code is provided. \
+The next 'TODO' are some hyperparameters: batchsize, learning rate and epoch. Large batchsizes make you learn faster, but lower batchsizes give more randomness. Large learning rate make you learn faster but may be unstable (producing NaNs) and bounce around the optimal point. Epoch is just how many times you run with all the dataset. Play around with this values and get a sense of what's suitable. Since our detection task is simple and the dataset is not diverse. You should be able to drop the training error below 1000 quite easily and you won't need to pay for a fast GPU to complete this lab. We are not grading on the accuracy, as long as it can detect somewhat. \
+Some of the code is hidden blocks. If interested read through the code to understand the entire pipeline. 
 
-The next 'TODO' are some hyperparameters: batchsize, learning rate and epoch. Large batchsizes make you learn faster, but lower batchsizes give more randomness. Large learning rate make you learn faster but may be unstable (producing NaNs) and bounce around the optimal point. Epoch is just how many times you run with all the dataset. Play around with this values and get a sense of what's suitable. Since our detection task is simple and the dataset is not diverse. You should be able to drop the training error below 1000 quite easily and you won't need to pay for a fast GPU to complete this lab. We are not grading on the accuracy, as long as it can detect somewhat.
 
 #### Use Other Networks
 
@@ -100,9 +177,17 @@ If your Jetson doesn't have pycuda, follow [this](https://docs.donkeycar.com/gui
  
 ## VI. Combining the Functions
 
-In the final part, write a complete package that takes image from the camera, run the lane detection and object detection on the image, then use the center point of the botton bounding box edge from object detection to calcuate the distance to the object. Please note that the image resolution should be 960x540 and your detection resolution may be smaller.
+In the final part, write a complete package that takes image from the camera, run object detection on the image, then use the center of the bounding box that falls on the 2D LiDAR projection line to project to 3D world position and get object distance from camera. Please note that the image resolution should be 960x540 and your detection resolution may be different. \n
+Save an image that shows the bounding box output for the detected class `f1tenth_car` with the 3D projection value. Name the image `detection`. Take a picture showing the distance between camera and the car with a measuring tape. Submit both images. Name the image `measurement`. 
+
 
 Save this part of the code as 'integrated.py' or 'integrated.cpp'.
+
+### (Optional)
+As you observe the 3D distance of the object you will notice that using only one point for 3D projection is very fluctuating. One can average on multiple observations to get a good estimate of the 3D position. Alternatively, use the depth value from camera, which allows you to sample multiple points everywhere on the bounding box and observe if there is a difference in the projected value from the LiDAR depth as the object moves farther away. Empirically, which one gives better estimate?  \
+Utilise these observations for your future projects. To get more robust predictions of the distance of the car, smooth out the predicted distance value in time using averaging methods, and filter out outliers. 
+
+
 
 <!-- In the final part, we will write another ROS node that subscribes to `/rgb_img` channel for an image. Run the lane detection and object detection on the image. Then use the center point of the botton bounding box edge from object detection to calcuate the distance to the object. Please note that the image resolution should be 960x540 and your detection resolution is smaller. -->
 
@@ -117,10 +202,9 @@ Please follow the `submission.md` in the Github repo.
 ## VIII: Grading Rubric
 
 - Accessing Image: **10** Points
-- Distance Measurement: **15** Points
-- Lane Detection: **20** Points
+- Distance Measurement: **25** Points
 - Network Training: **15** Points
-- TensorRT Deployment: **30** Points
+- TensorRT Deployment: **40** Points
 - Integration: **10** Points
 
 ## Other References
