@@ -1,6 +1,6 @@
 # Lab 10: Vision Lab
 
-Welcome to the Vision Lab. There are four parts in this lab. Part 1-3 are quite straightforward, whileas the last part is a bit involved. Please work in teams to complete this lab and make good use of Google. A lot of people have implemented this. If you have some problem, it's highly likely answered on some developer community.
+Welcome to the Vision Lab. This lab has four parts. Parts 1 through 3 are straightforward. Part 4 is more involved, so plan your time accordingly. Please work in teams and make full use of online resources. Many developers have implemented these methods before. If you run into a problem, someone has most likely already answered it on a developer forum such as Stack Overflow.
 
 ## I. Learning Goals
 
@@ -10,42 +10,41 @@ Welcome to the Vision Lab. There are four parts in this lab. Part 1-3 are quite 
 - Training and Deployment of an object detection with TensorRT
 
 ## II. Use cameras on Linux system
+As discussed in class, cameras in Linux are device files under `/dev`. Connect the RealSense camera you received to the Jetson and run `ls /dev/video*`. You should see three video devices. Use OpenCV to capture RGB frames from `/dev/video2`.
 
-As we have discussed in the lecture, in Linux cameras are mounted as file systems. Connect the Realsense camera you have received to Jetson and check if you can see three outputs with the `ls /dev/video*` command. Use OpenCV to capture RGB frames from `/dev/video2`.
+During racing, we want to receive camera frames as fast as possible. The highest RGB resolution at which the RealSense camera runs at 60 Hz is 960x540. Modify your code to receive 960x540 images at 60 Hz.
 
-During racing, we want to receive camera frames as fast as possible. Realsense camera only operates at 60Hz with a 960x540 resolution. Please modify your code so that we have receiving 960x540 images at 60Hz.
+<!-- Then write a ROS 2 node that captures RGB frames from the RealSense camera and publishes them on the `/rgb_img` topic using the `sensor_msgs/Image` message type. -->
 
-<!-- Then write a ROS2 node that captures RGB frame from the Realsense camera and publish it onto `/rgb_img` channel using `sensor_msgs/Image` message type. -->
-
-Save this part of the code as 'camera.py' or 'camera.cpp'.
+Save this part of the code as `camera.py` or `camera.cpp`.
 
 ## III. Camera Calibration
-For the scope of this course, we use a pinhole camera. The intrinsics of the camera refer to the center and focal length of lens and map the points in front of the camera to the image plane.
-A point $P_C = (X, Y, Z)$ in the camera frame, with $Z > 0$ in front of the camera, projects to pixel $(u, v)$:
+For this course, we model the camera as a pinhole camera. The intrinsic parameters of the camera are its focal lengths and its principal point. We use them to map points in front of the camera to pixels on the image plane. A point $P_C = (X, Y, Z)$ in the camera frame, with $Z > 0$ in front of the camera, projects to the pixel $(u, v)$ given by
 
 $$
 \begin{bmatrix} u \\ v \\ 1 \end{bmatrix} = \frac{1}{Z} K \begin{bmatrix} X \\ Y \\ Z \end{bmatrix},
 \qquad
 K = \begin{bmatrix} f_x & 0 & c_x \\ 0 & f_y & c_y \\ 0 & 0 & 1 \end{bmatrix}
 \quad\Longleftrightarrow\quad
-u = f_x \frac{X}{Z} + c_x, \quad v = f_y \frac{Y}{Z} + c_y
+u = f_x \frac{X}{Z} + c_x, \quad v = f_y \frac{Y}{Z} + c_y.
 $$
 
-$f_x, f_y$ are the focal lengths in pixels and $(c_x, c_y)$ is the principal point (center). Take them from the RealSense `camera_info` topic. **$K$ belongs to one resolution.** If the image is resized by $s$, scale $f_x, f_y, c_x, c_y$ by $s$ as well. The RealSense colour stream reports zero distortion, so you can usually skip it.
+Here $f_x$ and $f_y$ are the focal lengths in pixels. The principal point $(c_x, c_y)$ is the pixel at the intersection of the optical axis and the image plane. Read these values from the `camera_info` topic of the RealSense color stream. **Each resolution has its own $K$.** If you resize the image by a factor $s$, multiply $f_x$, $f_y$, $c_x$ and $c_y$ by $s$ as well. If all distortion coefficients in `camera_info` are zero, you can skip undistortion. This is usually the case for the RealSense color stream.
 
-In the inverse equation, a pixel only gives a **ray**, not a point:
+Since the projection divides by $Z$, we cannot recover depth from a single pixel. We can only recover the ray through the camera center and that pixel,
 
 $$
 d_C = K^{-1} \begin{bmatrix} u \\ v \\ 1 \end{bmatrix} = \begin{bmatrix} (u - c_x)/f_x \\ (v - c_y)/f_y \\ 1 \end{bmatrix},
-\qquad P_C = Z d_C \quad \text{for an unknown depth } Z
+\qquad P_C = Z d_C \quad \text{for an unknown depth } Z.
 $$
 
-So if you know the depth $Z$ of a pixel, from the RealSense depth image or from the LiDAR, the 3D point is
+If we know the depth $Z$ of the pixel from the RealSense depth image or from the LiDAR, then the 3D point is
 
 $$
-X = \frac{(u - c_x) Z}{f_x}, \qquad Y = \frac{(v - c_y) Z}{f_y}, \qquad Z = Z.
+P_C = Z d_C = \begin{bmatrix} (u - c_x) Z / f_x \\ (v - c_y) Z / f_y \\ Z \end{bmatrix}.
 $$
-Read more [here](https://hedivision.github.io/Pinhole.html)
+
+See [Pinhole Camera Model](https://hedivision.github.io/Pinhole.html) for more detail.
 
 ### Optional
 Camera calibration can change slightly over a period of time and might not match the manufacturer's intrinsic calibration. One can recalibrate the intrinsics of the camera using OpenCV checkerboard [tutorial](https://docs.opencv.org/4.13.0/dc/dbb/tutorial_py_calibration.html). For multi camera system or Camera-IMU extrinsic calibration one can use [Kalibr](https://github.com/ethz-asl/kalibr). 
