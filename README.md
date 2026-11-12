@@ -142,35 +142,36 @@ For a level camera, an image column is a vertical plane through the lens. Hence 
 
 ## V. Object Detection Network Training & Deployment
 
-In this part, you will first train an object detection nerual network and deploy it onto the F110 car. The model you will use is RT-DETRv2 which is the real-time detection model with transformers developed by Facebook. The particular version you will implement has 80 classes. First infer it directly on the dataset image and observe the output classes. Next you can either add `f1tenth_car` as an additional class or only keep this class as the output. By default it keeps all classes, thus remove other object detections which do not belong to your class of interest. The purpose of this assignment is to understand using open source model architecture from source code and finetune or modify the architecture as required.  
+In this part, you will train an object detection network and deploy it on the car. You will use [RT-DETRv2](https://arxiv.org/abs/2407.17140), a real-time detection transformer developed by Baidu. RT-DETRv2 is a real-time model in the family of [DETR](https://arxiv.org/abs/2005.12872) detectors, which Facebook AI Research introduced in 2020. We use the version of RT-DETRv2 that is pretrained on the 80 classes of the COCO dataset. First, run the pretrained model on the images of our dataset and look at the output classes. Next, either add `f1tenth_car` as an extra class or keep `f1tenth_car` as the only output class. If you keep all classes, remove the detections of the other classes in post-processing. In this assignment, you will learn to take an open-source model from its source code, fine-tune it and modify its architecture as needed.
 
 ### Neural Network Training
 
 #### Upload to Google Colab
 
-For the network training, we provide labeled dataset and a simple YOLO training and testing notebook written in Pytorch. You can access them [here](https://drive.google.com/drive/folders/18gjExE2XiQBj1f0_pgRPvbCSnguI6cLS?usp=sharing). You can use it to train on Google Colab with the free GPU resource. If you are new to Pytorch, watch this [tutorial](https://www.youtube.com/watch?v=Jy4wM2X21u0) as it goes through some key components in a training pipeline.
+For training, we provide a labeled dataset and a PyTorch notebook for training and testing. You can find both in this [Google Drive folder](https://drive.google.com/drive/folders/18gjExE2XiQBj1f0_pgRPvbCSnguI6cLS?usp=sharing). You can train on Google Colab with a free GPU. If you are new to PyTorch, watch this [PyTorch tutorial](https://www.youtube.com/watch?v=Jy4wM2X21u0) on the key components of a training pipeline.
 
-You can create an ese_615 folder in the 'My Drive' in your Google Drive. Upload the notebook and unzipped dataset folder. Open the note book with Google Colab and make sure you are connected to a GPU instance. The notebook has everything you need to for training and testing. For some of post-processing functions, you can just borrow them when you do you deployment.
+Create a folder named `ese_6150` in My Drive. Upload the notebook and the unzipped dataset folder to it. Open the notebook in Google Colab and make sure you are connected to a GPU runtime. You will find everything you need for training and testing in the notebook. You can reuse the post-processing functions of the notebook in your deployment code.
 
 #### TODOs
 
-There are only a few positions where marked 'TODO' or 'STUDENT CODE HERE'. The model arhcitecture is given in the notebook, it has a ResNet backbone, transformer encoder and decoder. You have to fill out parts of the encoder definition. Decoder has a more complicated deformable attention model and therefore it's code is provided. \
-The next 'TODO' are some hyperparameters: batchsize, learning rate and epoch. Large batchsizes make you learn faster, but lower batchsizes give more randomness. Large learning rate make you learn faster but may be unstable (producing NaNs) and bounce around the optimal point. Epoch is just how many times you run with all the dataset. Play around with this values and get a sense of what's suitable. Since our detection task is simple and the dataset is not diverse. You should be able to drop the training error below 1000 quite easily and you won't need to pay for a fast GPU to complete this lab. We are not grading on the accuracy, as long as it can detect somewhat. \
-Some of the code is hidden blocks. If interested read through the code to understand the entire pipeline. 
+You only need to fill in the few places marked `TODO` or `STUDENT CODE HERE`. We give the model architecture in the notebook. The model is a ResNet backbone followed by a transformer encoder and a transformer decoder. You will fill in parts of the encoder definition. We provide the code of the decoder, since its deformable attention is more involved.
 
+The remaining `TODO`s are the batch size, the learning rate and the number of epochs. With a smaller batch size, you get noisier gradient estimates, but you need less VRAM on your GPU. As such, the VRAM available sets an upper limit on the batch size you can use in training. With a larger learning rate, you train faster, but you may see the loss bounce around the optimum or turn into NaN. The number of epochs is the number of passes over the full dataset. Try different values to get a sense of what works. Since our task is simple and our dataset is not diverse, you should be able to drop the training loss below 1000 on the free Colab GPU. We do not grade accuracy, as long as you can detect the car in most images.
+
+Some code cells are hidden. If you are interested, read through them to understand the full pipeline.
 
 #### Use Other Networks
 
-If you are familiar with network training, you can choose any network architecture you like and train it with our dataset. You can receive great **extra credit** if you train a better object detection NN that is more robust. You need to make sure that it can be successfully deployed with TensorRT 8.5, which is the latest version you can get for Jetson. List your name in the `submission.md` if you did this.
+If you are familiar with network training, you can train any architecture you like on our dataset. You will receive **extra credit** if you train a detector that is more robust than the provided model. Make sure that you can deploy your model with the TensorRT version on your Jetson. If you do this, fill in the extra-credit section of `submission.md`.
 
 ### TensorRT Deployment
 
-After you are done with training the network, convert it into a TensorRT engine on the Jetson NX. To do this, first convert the model from PyTorch into ONNX and then to TensorRT. Then write a function that takes in an image, preprocess it, run with the model, post-process and return the results. Refer to the sample [code](https://github.com/NVIDIA/TensorRT/tree/release/8.4/samples) provided by TensorRT for building the engine. Make sure you select the correct branch for your TensorRT version. Some other references are attached at the end. **Notice they may be for a previous version.**
+After training, convert your network into a TensorRT engine on your Jetson. First, export the model from PyTorch to ONNX. Then build the TensorRT engine from the ONNX model. Next, write a function that takes an image, preprocesses it, runs the engine, post-processes the output and returns the detections. For building the engine from an ONNX model, refer to the ONNX samples of TensorRT. Use [sampleOnnxMNIST](https://github.com/NVIDIA/TensorRT/tree/main/samples/sampleOnnxMNIST) for C++ and [introductory_parser_samples](https://github.com/NVIDIA/TensorRT/tree/main/samples/python/introductory_parser_samples) for Python. Select the branch that matches your TensorRT version. We list other references at the end of this handout. **Some of them may be for an older TensorRT version.**
 
-Save this part of the code as 'convert_trt.py' or 'convert_trt.cpp' and 'detection.py' or 'detection.cpp'.
+Save the conversion code as `convert_trt.py` or `convert_trt.cpp`. Save the detection code as `detection.py` or `detection.cpp`.
 
-#### Install Pytorch
-If your Jetson doesn't have Pytorch, follow [this](https://docs.nvidia.com/deeplearning/frameworks/install-pytorch-jetson-platform/index.html) to install Pytorch.
+#### Install PyTorch
+If PyTorch is not installed on your Jetson, follow [NVIDIA's guide to installing PyTorch on Jetson](https://docs.nvidia.com/deeplearning/frameworks/install-pytorch-jetson-platform/index.html).
 
 #### Install ONNX and matplotlib
 ```
@@ -180,50 +181,52 @@ pip3 install onnx
 ```
 
 #### Install pycuda and set up TensorRT
-If your Jetson doesn't have pycuda, follow [this](https://docs.donkeycar.com/guide/robot_sbc/tensorrt_jetson_nano/) to set up TensorRT and install pycuda. (Only do Step 2)
+If pycuda is not installed on your Jetson, follow only Step 2 of the [Donkey Car guide to TensorRT on the Jetson Nano](https://docs.donkeycar.com/guide/robot_sbc/tensorrt_jetson_nano/) to set up TensorRT and install pycuda.
 
 #### Implementation Tips
 
-1. In your deployment order, do not import Pytorch. Use numpy to reshape the output to (5, 5, 10) if you use my code.
+1. Do not import PyTorch in your deployment code. Use NumPy to reshape the output of the engine.
+2. Build the engine in both FP32 and FP16 modes and compare their inference speeds. Report the comparison in `submission.md`.
 
-2. Convert the the engine using FP32 and FP16 mode and compare the speed difference. See `submission.md`.
- 
 ## VI. Combining the Functions
 
-In the final part, write a complete package that takes image from the camera, run object detection on the image, then use the center of the bounding box that falls on the 2D LiDAR projection line to project to 3D world position and get object distance from camera. Please note that the image resolution should be 960x540 and your detection resolution may be different. \n
-Save an image that shows the bounding box output for the detected class `f1tenth_car` with the 3D projection value. Name the image `detection`. Take a picture showing the distance between camera and the car with a measuring tape. Submit both images. Name the image `measurement`. 
+In the final part, combine the previous parts into one complete package. Read images from the camera and run object detection on each image. For each bounding box, take the projected LiDAR scan at the center column of the box. Use the depth of this LiDAR point to back-project the center of the box to a 3D position in the camera frame. Then compute the distance from the camera to the object. The camera images are 960x540. If you run the detector at a different resolution, scale the boxes back to 960x540 before you use $K$.
 
+Save an image with the bounding box of the detected `f1tenth_car` and its 3D position drawn on it. Name this image `detection`. Then take a picture of a measuring tape between the camera and the car. Name this image `measurement`. Submit both images.
 
-Save this part of the code as 'integrated.py' or 'integrated.cpp'.
+Save this part of the code as `integrated.py` or `integrated.cpp`.
 
 ### (Optional)
-As you observe the 3D distance of the object you will notice that using only one point for 3D projection is very fluctuating. One can average on multiple observations to get a good estimate of the 3D position. Alternatively, use the depth value from camera, which allows you to sample multiple points everywhere on the bounding box and observe if there is a difference in the projected value from the LiDAR depth as the object moves farther away. Empirically, which one gives better estimate?  \
-Utilise these observations for your future projects. To get more robust predictions of the distance of the car, smooth out the predicted distance value in time using averaging methods, and filter out outliers. 
+As you watch the estimated distance, you will notice that it is noisy when you use a single LiDAR point. You can average multiple observations to get a better estimate. Alternatively, use the RealSense depth image aligned to the color image. With the depth image, you can sample many points over the bounding box. Compare the resulting position with the LiDAR estimate as the car moves farther away. With which method do you get the better estimate in your experiments?
 
+Use these observations in your future projects. For a more robust distance estimate, smooth the estimate over time with a moving average and reject outliers.
 
+<!-- In the final part, write another ROS 2 node that subscribes to the `/rgb_img` topic. Run lane detection and object detection on each image. Then use the center of the bottom edge of each bounding box to compute the distance to the object. The camera images are 960x540. Your detection resolution is smaller. -->
 
-<!-- In the final part, we will write another ROS node that subscribes to `/rgb_img` channel for an image. Run the lane detection and object detection on the image. Then use the center point of the botton bounding box edge from object detection to calcuate the distance to the object. Please note that the image resolution should be 960x540 and your detection resolution is smaller. -->
-
-<!-- Publish the result image with lane detection and object detection indicators to the `/det_img` channel. Publish the distance to detections to the `/det_distance` channel. -->
-
+<!-- Publish the image with the lane and object detections drawn on it on the `/det_img` topic. Publish the distances to the detections on the `/det_distance` topic. -->
+ 
 ## VII. Deliverables and Submission
+ 
+Push your finished code to your GitHub repository. Name each file as instructed in each part. Fill in `submission.md` in your repository and push it with your code.
+ 
+## VIII. Grading Rubric
+ 
+- Accessing Images: **10** points
+- Distance Measurement: **25** points
+- Network Training: **15** points
+- TensorRT Deployment: **40** points
+- Integration: **10** points
 
-Push your finished code onto github repo. Make you name the parts as instructed.
-
-Please follow the `submission.md` in the Github repo.
-
-## VIII: Grading Rubric
-
-- Accessing Image: **10** Points
-- Distance Measurement: **25** Points
-- Network Training: **15** Points
-- TensorRT Deployment: **40** Points
-- Integration: **10** Points
-
+You can earn up to **20** bonus points from the optional parts.
+ 
+- Camera Recalibration (optional part of Section III): **5** bonus points
+- Other Networks (Section V): **10** bonus points
+- LiDAR and Depth Image Comparison (optional part of Section VI): **5** bonus points
 ## Other References
-1. [tutorial](https://learnopencv.com/how-to-convert-a-model-from-pytorch-to-tensorrt-and-speed-up-inference/)
-2. [guide](https://docs.nvidia.com/deeplearning/tensorrt/sample-support-guide/index.html)
-3. You can see [this](https://github.com/NVIDIA-AI-IOT/torch2trt/issues/233) on how to save and read engine file. Also, due to version difference, we need to replace this [line](https://github.com/spmallick/learnopencv/blob/a18fa4e1a255f58700b3c4687e425cabd58c41bf/PyTorch-ONNX-TensorRT/trt_inference.py#L17) by the following two lines.
+ 
+1. [How to Convert a Model from PyTorch to TensorRT and Speed Up Inference](https://learnopencv.com/how-to-convert-a-model-from-pytorch-to-tensorrt-and-speed-up-inference/), a LearnOpenCV tutorial.
+2. [TensorRT Sample Support Guide](https://docs.nvidia.com/deeplearning/tensorrt/sample-support-guide/index.html) from NVIDIA.
+3. [torch2trt issue #233](https://github.com/NVIDIA-AI-IOT/torch2trt/issues/233) on how to save and load an engine file. The LearnOpenCV tutorial is for an older TensorRT version. Hence you need to replace [line 17 of `trt_inference.py`](https://github.com/spmallick/learnopencv/blob/a18fa4e1a255f58700b3c4687e425cabd58c41bf/PyTorch-ONNX-TensorRT/trt_inference.py#L17) with the following two lines.
 ```
 explicit_batch = 1 << (int)(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
 network = builder.create_network(explicit_batch)
