@@ -139,7 +139,6 @@ For a level camera, an image column is a vertical plane through the lens. Hence 
 - If an object is entirely below or above the LiDAR plane, we assign it the depth of the background behind it. Check that the projected LiDAR hit is inside the box vertically. Otherwise, reject the box.
 - If a small box is next to a nearer object, we may pick up the returns of the nearer object.
 - At short range, the RealSense depth image is a useful cross-check. The D435 depth is reliable up to about 3 m. See the optional part of Section VI. -->
-
 ## V. Object Detection Network Training & Deployment
 
 In this part, you will train an object detection network and deploy it on the car. You will use [RT-DETRv2](https://arxiv.org/abs/2407.17140), a real-time detection transformer developed by Baidu. RT-DETRv2 is a real-time model in the family of [DETR](https://arxiv.org/abs/2005.12872) detectors, which Facebook AI Research introduced in 2020. We use the version of RT-DETRv2 that is pretrained on the 80 classes of the COCO dataset. First, run the pretrained model on the images of our dataset and look at the output classes. Next, either add `f1tenth_car` as an extra class or keep `f1tenth_car` as the only output class. If you keep all classes, remove the detections of the other classes in post-processing. In this assignment, you will learn to take an open-source model from its source code, fine-tune it and modify its architecture as needed.
@@ -192,25 +191,25 @@ If pycuda is not installed on your Jetson, follow only Step 2 of the [Donkey Car
 
 In the final part, combine the previous parts into one complete package. Read images from the camera and run object detection on each image. For each bounding box, take the projected LiDAR scan at the center column of the box. Use the depth of this LiDAR point to back-project the center of the box to a 3D position in the camera frame. Then compute the distance from the camera to the object. The camera images are 960x540. If you run the detector at a different resolution, scale the boxes back to 960x540 before you use $K$.
 
-Save an image with the bounding box of the detected `f1tenth_car` and its 3D position drawn on it. Name this image `detection`. Then take a picture of a measuring tape between the camera and the car. Name this image `measurement`. Submit both images.
+Save an image with the bounding box of the detected `f1tenth_car` and its 3D position drawn on it. Name this image `detection`. Then take a picture of a measuring tape between the camera and the car. Name this image `measurement`. Submit both images. Then record a video of your package running on the car, with the bounding boxes and the estimated distances drawn on the image. Submit the link to this video in `submission.md`. Make sure that the course staff can view the video.
 
 Save this part of the code as `integrated.py` or `integrated.cpp`.
 
-### (Optional)
-As you watch the estimated distance, you will notice that it is noisy when you use a single LiDAR point. You can average multiple observations to get a better estimate. Alternatively, use the RealSense depth image aligned to the color image. With the depth image, you can sample many points over the bounding box. Compare the resulting position with the LiDAR estimate as the car moves farther away. With which method do you get the better estimate in your experiments?
+### (Optional, Bonus)
+As you watch the estimated distance, you will notice that it is noisy when you use a single LiDAR point. You can average multiple observations to get a better estimate. Alternatively, use the RealSense depth image aligned to the color image. With the depth image, you can sample many points over the bounding box. Compare the resulting position with the LiDAR estimate as the car moves farther away. With which method do you get the better estimate in your experiments? Answer this question in `submission.md`.
 
 Use these observations in your future projects. For a more robust distance estimate, smooth the estimate over time with a moving average and reject outliers.
 
 <!-- In the final part, write another ROS 2 node that subscribes to the `/rgb_img` topic. Run lane detection and object detection on each image. Then use the center of the bottom edge of each bounding box to compute the distance to the object. The camera images are 960x540. Your detection resolution is smaller. -->
 
 <!-- Publish the image with the lane and object detections drawn on it on the `/det_img` topic. Publish the distances to the detections on the `/det_distance` topic. -->
- 
+
 ## VII. Deliverables and Submission
- 
+
 Push your finished code to your GitHub repository. Name each file as instructed in each part. Fill in `submission.md` in your repository and push it with your code.
- 
+
 ## VIII. Grading Rubric
- 
+
 - Accessing Images: **10** points
 - Distance Measurement: **25** points
 - Network Training: **15** points
@@ -218,12 +217,13 @@ Push your finished code to your GitHub repository. Name each file as instructed 
 - Integration: **10** points
 
 You can earn up to **20** bonus points from the optional parts.
- 
+
 - Camera Recalibration (optional part of Section III): **5** bonus points
 - Other Networks (Section V): **10** bonus points
 - LiDAR and Depth Image Comparison (optional part of Section VI): **5** bonus points
+
 ## Other References
- 
+
 1. [How to Convert a Model from PyTorch to TensorRT and Speed Up Inference](https://learnopencv.com/how-to-convert-a-model-from-pytorch-to-tensorrt-and-speed-up-inference/), a LearnOpenCV tutorial.
 2. [TensorRT Sample Support Guide](https://docs.nvidia.com/deeplearning/tensorrt/sample-support-guide/index.html) from NVIDIA.
 3. [torch2trt issue #233](https://github.com/NVIDIA-AI-IOT/torch2trt/issues/233) on how to save and load an engine file. The LearnOpenCV tutorial is for an older TensorRT version. Hence you need to replace [line 17 of `trt_inference.py`](https://github.com/spmallick/learnopencv/blob/a18fa4e1a255f58700b3c4687e425cabd58c41bf/PyTorch-ONNX-TensorRT/trt_inference.py#L17) with the following two lines.
@@ -231,3 +231,4 @@ You can earn up to **20** bonus points from the optional parts.
 explicit_batch = 1 << (int)(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
 network = builder.create_network(explicit_batch)
 ```
+
