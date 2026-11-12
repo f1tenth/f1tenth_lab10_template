@@ -11,6 +11,11 @@ Detection image: (FILL ME IN)
 
 Measurement image: (FILL ME IN)
 
+## Integrated Object Detection + Distance Calculation Video
+Video link: (FILL ME IN)
+
+Make sure that the course staff can view the video.
+
 ## Neural Network Training & Testing Loss Plot
 (FILL ME IN)
 
