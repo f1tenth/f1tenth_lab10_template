@@ -64,67 +64,81 @@ Every 3D point on a ray through the lens center lands on the same pixel. The dep
 
 | Frame | Axes | Notes |
 | --- | --- | --- |
-| LiDAR $L$ | $x$ forward, $y$ left, $z$ up | the scan lies in the plane $z_L = 0$ |
-| Camera optical $C$ | $x$ right, $y$ down, $z$ forward | the OpenCV convention, `*_optical_frame` in ROS |
+| LiDAR $L$ | $x$ forward, $y$ left, $z$ up | The scan is in the plane $z_L = 0$. |
+| Camera optical $C$ | $x$ right, $y$ down, $z$ forward | OpenCV convention. The ROS name is `*_optical_frame`. |
 
-Check the axis conventions of your own sensors before writing any code. A sign error here moves every point to the wrong side of the car.
+#### 2. Intrinsics: camera frame → image
+
+We use the pinhole model with the intrinsic matrix $K$ of the color camera. Use the $K$ that matches the resolution of your images. We project a point $P_C = (X_C, Y_C, Z_C)$ with $Z_C > 0$ to the pixel $(u, v)$ with
+
+$$
+u = f_x \frac{X_C}{Z_C} + c_x, \qquad v = f_y \frac{Y_C}{Z_C} + c_y.
+$$
+
+Conversely, if we know the depth $Z_C$ of a pixel $(u, v)$, then we back-project the pixel to the point
+
+$$
+P_C = Z_C K^{-1} \begin{bmatrix} u \\ v \\ 1 \end{bmatrix} = \begin{bmatrix} (u - c_x) Z_C / f_x \\ (v - c_y) Z_C / f_y \\ Z_C \end{bmatrix}.
+$$
+
+Here $Z_C$ is the coordinate of the point along the optical axis. Do not use the LiDAR range $r_i$ in place of $Z_C$, since $r_i$ is the distance from the LiDAR to the point. We use the projection in Section 4 and the back-projection in Section 5.
 
 #### 3. Extrinsics: LiDAR frame → camera frame
 
-The LiDAR is rigidly mounted to the camera, so a single rigid transform maps between them:
+Since the LiDAR and the camera are rigidly mounted, we relate their frames with a rigid transformation
 
 $$
-P_C = R_{CL} P_L + t_{CL}
+P_C = R_{CL} P_L + t_{CL}.
 $$
 
-The first is the fixed **axis swap** from the LiDAR's "forward–left–up" to the camera's "right–down–forward" ($X_C = -y_L$, $Y_C = -z_L$, $Z_C = x_L$). Ensure both are rigidly mounted and the axes are perpendicular to avoid any smaller rotational discrepancies. 
+The rotation $R_{CL}$ is the fixed **axis swap** from the forward-left-up axes of the LiDAR to the right-down-forward axes of the camera, with $X_C = -y_L$, $Y_C = -z_L$ and $Z_C = x_L$. With this rotation, we assume that the axes of the two sensors are aligned. Mount both sensors rigidly with aligned axes to avoid small residual rotations.
 
 $$
 R_{CL} = \begin{bmatrix} 0 & -1 & 0 \\ 0 & 0 & -1 \\ 1 & 0 & 0 \end{bmatrix},
 \qquad t_{CL} = -R_{CL} c_L
 $$
 
-Here $c_L$ is the position of the camera lens center measured in the LiDAR frame. Example: a camera 7.6 cm in front of the LiDAR and 6.35 cm below it has $c_L = (0.076, 0, -0.0635)$ m, which gives $t_{CL} = (0, -0.0635, -0.076)$. Measure $c_L$ to the **lens** of the stream you use: on a D435 the color lens is not at the center of the camera case.
+Here $c_L$ is the position of the camera lens center in the LiDAR frame. For example, if we mount the camera 7.6 cm in front of the LiDAR and 6.35 cm below it, then $c_L = (0.076, 0, -0.0635)$ m and $t_{CL} = (0, -0.0635, -0.076)$ m. Measure $c_L$ to the lens of the color camera, since we project the scan into the color image. The color camera of the D435 is not at the center of the case, so be sure to get the transformation to the color camera's lens.
 
 #### 4. Projecting the LiDAR scan into the image
 
-Beam $i$ of a `sensor_msgs/LaserScan` with range $r_i$ and angle $\theta_i = \theta_{min} + i \Delta\theta$ is the point
+For beam $i$ of a `sensor_msgs/LaserScan`, with range $r_i$ and angle $\theta_i = \theta_{min} + i \Delta\theta$, the point in the LiDAR frame is
 
 $$
 P_{L,i} = (r_i \cos\theta_i, r_i \sin\theta_i, 0).
 $$
 
-Transform it with the extrinsics, keep it only if $Z_C > 0$, and project it with $K$. Plot these pixels on the image: **this is your calibration check**. The projected scan must lie on the objects at LiDAR height, and its range jumps must line up with object edges. A horizontal shift means a lateral error in the extrinsics; a vertical shift means a height error.
+Transform each point to the camera frame with the extrinsics. Discard points with $Z_C \le 0$. Project the remaining points with $K$ and plot them on the image. **This plot is your calibration check.** If your extrinsics are correct, you should see the projected scan on objects at the height of the LiDAR. You should also see the range jumps of the scan at the edges of objects. If you see a horizontal shift, then the lateral offset in your extrinsics is wrong. If you see a vertical shift, then the height offset is wrong.
 
-<!-- Because the scan is a plane, it does not appear as a straight line. For a camera with no tilt and the LiDAR a height $h$ above the lens:
+<!-- Since the camera center is not in the scan plane, the projected scan is a curve. If we mount the camera with no tilt and the LiDAR at a height $h$ above the lens, then we find a scan point at depth $Z_C$ on the row
 
 $$
-v = c_y - f_y \frac{h}{Z_C}
+v = c_y - f_y \frac{h}{Z_C}.
 $$
 
-Near objects therefore appear higher in the image. As $Z_C \to \infty$ the scan approaches the horizon row $v = c_y$. 
+Hence the scan points of near objects are higher in the image. As $Z_C \to \infty$, we have $v \to c_y$. Hence the scan points of far objects are close to the horizon row $v = c_y$.
 
-#### 5. Pixel / bounding box → 3D using the LiDAR
+#### 5. Pixel or bounding box to 3D with the LiDAR
 
-The LiDAR only measures along that one curve in the image, so a pixel $(u, v)$ takes its depth from the LiDAR returns **in its image column**:
+Since we only have LiDAR depth along this curve, we take the depth of a pixel $(u, v)$ from the LiDAR returns **in its image column**.
 
-1. **Gate.** Keep the projected scan points with $|u_i - u| < w$. For a bounding box, take the box's columns, trimmed by about 15% on each side so the background at the edges is excluded.
-2. **Cluster and pick the nearest.** Split those returns where the range jumps (e.g. more than 3σ beyond what the angular step allows) and keep the **closest** cluster: the object occludes everything behind it. Interpolate it at column $u$ to get the LiDAR hit $h_L = (h_x, h_y, 0)$.
-3. **Intersect the pixel's ray with the object's surface.** Assume the surface is vertical at $h_L$, which holds for cars, walls and cones. Write the camera centre in the LiDAR frame, $a = -R_{CL}^{\top} t_{CL}$, and the pixel's ray direction in the LiDAR frame, $d = R_{CL}^{\top} K^{-1} [u, v, 1]^{\top}$. The vertical plane through $h_L$, facing the camera, has normal $n = (h_x - a_x, h_y - a_y, 0) / \lVert\cdot\rVert$, so
+1. **Gate.** Keep the projected scan points with $|u_i - u| < w$ for a small window half-width $w$. For a bounding box, use the columns of the box. Trim about 15% from each side of the box to exclude the background at its edges.
+2. **Cluster and pick the nearest.** Split the gated returns into clusters wherever the range jump between neighboring beams is more than about $3\sigma$ above the expected jump. Here $\sigma$ is the range noise of the LiDAR. Keep the **closest** cluster, since we cannot see anything behind the object. Interpolate this cluster at column $u$ to get the LiDAR hit $h_L = (h_x, h_y, 0)$.
+3. **Intersect the pixel ray with the surface of the object.** Assume the surface is vertical at $h_L$. We can make this assumption for cars, walls and cones. Let $a = -R_{CL}^{\top} t_{CL}$ be the camera center in the LiDAR frame. Let $d = R_{CL}^{\top} K^{-1} [u, v, 1]^{\top}$ be the direction of the pixel ray in the LiDAR frame. We take the vertical plane through $h_L$ with the horizontal normal $n = (h_x - a_x, h_y - a_y, 0) / \lVert\cdot\rVert$. Then we find the intersection point $P_L$ as
 $$
 \lambda = \frac{n^{\top} (h_L - a)}{n^{\top} d}, \qquad P_L = a + \lambda d .
 $$
-4. **Transform** $P_L$ to the frame you need, e.g. `base_link` using the LiDAR's mounting pose.
+4. **Transform** $P_L$ to the frame you need. For example, use the mounting pose of the LiDAR to transform $P_L$ to `base_link`.
 
-For a level camera, an image column is a vertical plane through the lens, so step 3 is exact for any vertical surface. It also gives the height of pixels above or below the scan line. The simpler shortcut is to use the hit's depth $Z_C = (R_{CL} h_L + t_{CL})_z$ in the formula of Section 2. That is fine near the centre of the image, but it ignores the slant of the surface.
+For a level camera, an image column is a vertical plane through the lens. Hence step 3 is exact for any vertical surface, including at pixels above or below the scan line. A simpler alternative is to use the depth of the hit, $Z_C = (R_{CL} h_L + t_{CL})_z$, in the back-projection formula of Section 2. Since $R_{CL}$ is a pure axis swap, the camera is level relative to the LiDAR plane. Then we obtain the same point from this shortcut and from step 3. We get different points from the two methods only when the camera is tilted relative to the LiDAR.
 
-**Resolution.** If the detector runs on a resized image ($W_{det} \times H_{det}$), first scale the box back to the camera resolution, $u = u_{det} W / W_{det}$ and $v = v_{det} H / H_{det}$, before using $K$.
+**Resolution.** If you run the detector on a resized image of size $W_{det} \times H_{det}$, scale the box back to the camera resolution $W \times H$ with $u = u_{det} W / W_{det}$ and $v = v_{det} H / H_{det}$ before using $K$.
 
 **Limitations to keep in mind.**
 
-- An object that does not cross the LiDAR plane (too low, or entirely above it) gets the depth of whatever is behind it. Check that the LiDAR hit projects **inside** the box vertically; otherwise reject the box.
-- Small boxes next to a nearer object can pick up that object's returns.
-- The RealSense depth image (reliable to about 3–6 m) is a useful cross-check at short range. See the optional part of Section VI. -->
+- If an object is entirely below or above the LiDAR plane, we assign it the depth of the background behind it. Check that the projected LiDAR hit is inside the box vertically. Otherwise, reject the box.
+- If a small box is next to a nearer object, we may pick up the returns of the nearer object.
+- At short range, the RealSense depth image is a useful cross-check. The D435 depth is reliable up to about 3 m. See the optional part of Section VI. -->
 
 ## V. Object Detection Network Training & Deployment
 
